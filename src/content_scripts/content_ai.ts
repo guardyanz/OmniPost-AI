@@ -3,6 +3,12 @@
 import { SELECTORS } from '../utils/selectors'
 type AIPlatform = 'chatgpt' | 'gemini'
 
+const PLATFORM_LIMITS: Record<string, number> = {
+  threads: 240,
+  facebook: 500,
+  x: 260,
+}
+
 function detectPlatform(): AIPlatform | null {
   const host = window.location.hostname
   // console.log('[content_ai] detectPlatform -> host:', host)
@@ -73,6 +79,37 @@ function safeClick(el: Element | null): boolean {
     el.dispatchEvent(ev)
   }
   return true
+}
+
+function truncateText(text: string, maxLength: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+
+  const slice = normalized.slice(0, maxLength - 1).trim()
+  const sentenceEnd = Math.max(slice.lastIndexOf('.'), slice.lastIndexOf('!'), slice.lastIndexOf('?'))
+  if (sentenceEnd >= Math.floor(maxLength * 0.55)) return slice.slice(0, sentenceEnd + 1).trim()
+
+  const lastSpace = slice.lastIndexOf(' ')
+  return `${slice.slice(0, lastSpace > 0 ? lastSpace : slice.length).trim()}...`
+}
+
+function limitGeneratedContent(content: string, targetPlatform?: string): string {
+  const platform = targetPlatform ?? ''
+  const limit = PLATFORM_LIMITS[platform]
+  if (!limit) return content.trim()
+
+  if (platform === 'threads') {
+    const parts = content
+      .split(/---\s*paragraf\s*\d+\s*---+|---PARAGRAF\s*\d+----+/i)
+      .map(part => truncateText(part, limit))
+      .filter(Boolean)
+
+    return parts.map((part, index) => (
+      index === 0 ? part : `---PARAGRAF ${index + 1}----\n${part}`
+    )).join('\n')
+  }
+
+  return truncateText(content, limit)
 }
 async function handleChatGPT(prompt: string): Promise<string> {
   // console.log('[content_ai] handleChatGPT start, prompt:', prompt.slice(0, 80))
@@ -175,26 +212,26 @@ async function handleGemini(prompt: string): Promise<string> {
   return cleaned
 }
 function buildThreadsPrompt(paragraphCount: number): string {
-  if (paragraphCount <= 1) return 'Output ONLY the post content. No greetings, no introductions, no explanations, no offers for alternative versions. Write a single short engaging paragraph. Topic:'
-  const parts: string[] = ['Output ONLY the post content. No greetings, no introductions, no explanations, no offers for alternative versions.']
-  parts.push(`Write exactly ${paragraphCount} short engaging paragraphs.`)
+  if (paragraphCount <= 1) return 'Output ONLY the post content. No greetings, intro, explanation, CTA, hashtags, or alternative versions. Write 1 concise paragraph, maximum 240 characters. Topic:'
+  const parts: string[] = ['Output ONLY the post content. No greetings, intro, explanation, CTA, hashtags, or alternative versions.']
+  parts.push(`Write exactly ${paragraphCount} concise paragraphs. Each paragraph maximum 240 characters.`)
   for (let i = 2; i <= paragraphCount; i++) {
     parts.push(`Add ---PARAGRAF ${i}---- before paragraph ${i}.`)
   }
-  parts.push('Each paragraph must be self-contained and thread-friendly. Topic:')
+  parts.push('Keep each paragraph punchy and self-contained. Topic:')
   return parts.join(' ')
 }
 
-function buildXPrompt(paragraphCount: number): string {
-  const parts: string[] = ['Output ONLY the post content. No greetings, no introductions, no explanations, no offers for alternative versions.']
-  parts.push('Write a single tweet. The ENTIRE tweet MUST be under 280 characters. Topic:')
+function buildXPrompt(): string {
+  const parts: string[] = ['Output ONLY the post content. No greetings, intro, explanation, hashtags, or alternative versions.']
+  parts.push('Write one concise tweet, maximum 260 characters. Topic:')
   return parts.join(' ')
 }
 
 const PLATFORM_PROMPTS: Record<string, (count: number) => string> = {
   threads: (count) => buildThreadsPrompt(count),
-  x: (count) => buildXPrompt(count),
-  facebook: () => 'Output ONLY the post content. No greetings, no introductions, no explanations, no offers for alternative versions. Write a single engaging Facebook post with a catchy hook and conversational tone. Topic:',
+  x: () => buildXPrompt(),
+  facebook: () => 'Output ONLY the post content. No greetings, intro, explanation, hashtags, or alternative versions. Write one concise Facebook post, maximum 500 characters, with a clear hook and conversational tone. Topic:',
 }
 
 function buildPrompt(userPrompt: string, targetPlatform?: string, paragraphCount = 3): string {
@@ -245,7 +282,7 @@ async function handleGenerate(prompt: string, targetPlatform?: string, paragraph
     ? await handleChatGPT(finalPrompt)
     : await handleGemini(finalPrompt)
 
-  return { content }
+  return { content: limitGeneratedContent(content, targetPlatform) }
 }
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return

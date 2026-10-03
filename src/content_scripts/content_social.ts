@@ -56,6 +56,36 @@ function findByText(selector: string, text: string): Element | null {
   return Array.from(document.querySelectorAll(selector))
     .find(el => el.textContent?.trim() === text) ?? null
 }
+
+function truncateText(text: string, maxLength: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+
+  const slice = normalized.slice(0, maxLength - 1).trim()
+  const sentenceEnd = Math.max(slice.lastIndexOf('.'), slice.lastIndexOf('!'), slice.lastIndexOf('?'))
+  if (sentenceEnd >= Math.floor(maxLength * 0.55)) return slice.slice(0, sentenceEnd + 1).trim()
+
+  const lastSpace = slice.lastIndexOf(' ')
+  return `${slice.slice(0, lastSpace > 0 ? lastSpace : slice.length).trim()}...`
+}
+
+function limitPostText(platform: string, text: string): string {
+  if (platform === 'threads') {
+    const parts = text
+      .split(/---\s*paragraf\s*\d+\s*---+|---PARAGRAF\s*\d+----+/i)
+      .map(part => truncateText(part, 240))
+      .filter(Boolean)
+
+    return parts.map((part, index) => (
+      index === 0 ? part : `---PARAGRAF ${index + 1}----\n${part}`
+    )).join('\n')
+  }
+
+  if (platform === 'facebook') return truncateText(text, 500)
+  if (platform === 'x') return truncateText(text, 260)
+  return text.trim()
+}
+
 async function postToThreads(text: string, scheduleTime?: number): Promise<void> {
   // console.log('[content_social] postToThreads start, text length:', text.length)
 
@@ -133,11 +163,11 @@ async function postToThreads(text: string, scheduleTime?: number): Promise<void>
     const composerDialog = document.querySelector('[role="dialog"]')
     let moreBtn: Element | null = null
     if (composerDialog) {
-      moreBtn = Array.from(composerDialog.querySelectorAll('div[role="button"]'))
-        .find(el => el.textContent?.trim() === 'More' && el.offsetParent !== null)
+      moreBtn = Array.from(composerDialog.querySelectorAll<HTMLElement>('div[role="button"]'))
+        .find(el => el.textContent?.trim() === 'More' && el.offsetParent !== null) ?? null
     }
     if (!moreBtn) {
-      const allMoreBtns = Array.from(document.querySelectorAll('div[role="button"]'))
+      const allMoreBtns = Array.from(document.querySelectorAll<HTMLElement>('div[role="button"]'))
         .filter(el => el.textContent?.trim() === 'More' && el.offsetParent !== null)
       moreBtn = allMoreBtns.find(b => {
         const r = b.getBoundingClientRect()
@@ -296,7 +326,7 @@ async function handlePost(platform: string, text: string, scheduleTime?: number)
       await postToFacebook(text)
       break
     case 'x':
-      await postToX(text, scheduleTime)
+      await postToX(text)
       break
     default:
       throw new Error(`Unsupported platform: ${platform}`)
@@ -307,7 +337,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
     case 'SOCIAL_POST':
       // console.log('[content_social] starting handlePost')
-      handlePost(message.platform, message.content, message.scheduleTime)
+      handlePost(message.platform, limitPostText(message.platform, message.content), message.scheduleTime)
         .then(() => {
           // console.log('[content_social] post success')
           sendResponse({ success: true })
@@ -319,7 +349,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true
 
     case 'SOCIAL_POST_MULTI':
-      handlePost(message.platform, message.content, message.scheduleTime)
+      handlePost(message.platform, limitPostText(message.platform, message.content), message.scheduleTime)
         .then(() => {
           // console.log('[content_social] multi-post success')
           sendResponse({ success: true })

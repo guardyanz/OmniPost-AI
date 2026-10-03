@@ -1,0 +1,91 @@
+{
+  "manifest_version": 3,
+  "name": "OmniPost AI",
+  "version": "1.0.0",
+  "description": "Multi-platform auto-posting automation AI (ChatGPT and Gemini)",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://www.threads.com/*",
+    "https://www.facebook.com/*",
+    "https://x.com/*",
+    "https://twitter.com/*"
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_title": "OmniPost AI",
+    "default_icon": {
+      "16": "public/icon-16.png",
+      "48": "public/icon-48.png",
+      "128": "public/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "public/icon-16.png",
+    "48": "public/icon-48.png",
+    "128": "public/icon-128.png"
+  },
+  "background": {
+    "service_worker": "service-worker-loader.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "assets/content_ai.ts-loader-CrmYokCG.js"
+      ],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://gemini.google.com/*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "assets/content_social.ts-loader-DJSZs0Fo.js"
+      ],
+      "matches": [
+        "https://www.threads.com/*",
+        "https://www.facebook.com/*",
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://gemini.google.com/*"
+      ],
+      "resources": [
+        "assets/selectors-DjO8x6Vr.js",
+        "assets/content_ai.ts-CxQXKPKB.js"
+      ],
+      "use_dynamic_url": false
+    },
+    {
+      "matches": [
+        "https://twitter.com/*",
+        "https://www.facebook.com/*",
+        "https://www.threads.com/*",
+        "https://x.com/*"
+      ],
+      "resources": [
+        "assets/selectors-DjO8x6Vr.js",
+        "assets/content_social.ts-B1iAATCt.js"
+      ],
+      "use_dynamic_url": false
+    }
+  ]
+}
